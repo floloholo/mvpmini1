@@ -1,19 +1,28 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import ChatSmiley from "./ChatSmiley";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import { Button } from "./ui/button";
-import { Cloud, HelpCircle } from "lucide-react";
+import { Cloud, HelpCircle, Loader2 } from "lucide-react";
+import { sendMessageToDeepseek } from "../lib/deepseek";
+import { supabase, getCurrentUserId } from "../lib/supabase";
+
+interface Message {
+  id: string;
+  content: string;
+  type: "user" | "ai";
+  timestamp: Date;
+}
+
+interface DeepseekMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
 
 interface ChatInterfaceProps {
-  initialMessages?: Array<{
-    id: string;
-    content: string;
-    type: "user" | "ai";
-    timestamp: Date;
-  }>;
+  initialMessages?: Array<Message>;
   onSendMessage?: (message: string) => void;
   enableVoiceInput?: boolean;
 }
@@ -33,8 +42,71 @@ const ChatInterface = ({
   const navigate = useNavigate();
   const [messages, setMessages] = useState(initialMessages);
   const [isTyping, setIsTyping] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const handleSendMessage = (message: string) => {
+  // Load previous messages from Supabase
+  useEffect(() => {
+    const loadMessages = async () => {
+      try {
+        setIsLoading(true);
+        const userId = await getCurrentUserId();
+
+        if (userId) {
+          const { data, error } = await supabase
+            .from("chat_messages")
+            .select("*")
+            .eq("user_id", userId)
+            .order("created_at", { ascending: true })
+            .limit(50);
+
+          if (data && !error && data.length > 0) {
+            const formattedMessages = data.map((msg) => ({
+              id: msg.id,
+              content: msg.content,
+              type: msg.type as "user" | "ai",
+              timestamp: new Date(msg.created_at),
+            }));
+
+            setMessages(formattedMessages);
+          }
+        }
+      } catch (error) {
+        console.error("Error loading chat messages:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadMessages();
+  }, []);
+
+  // Save message to Supabase
+  const saveMessageToSupabase = async (message: Message) => {
+    try {
+      const userId = await getCurrentUserId();
+      if (!userId) return;
+
+      await supabase.from("chat_messages").insert({
+        id: message.id,
+        user_id: userId,
+        content: message.content,
+        type: message.type,
+        created_at: message.timestamp.toISOString(),
+      });
+    } catch (error) {
+      console.error("Error saving chat message:", error);
+    }
+  };
+
+  // Convert chat messages to DeepSeek format for API
+  const getDeepseekMessages = (): DeepseekMessage[] => {
+    return messages.map((msg) => ({
+      role: msg.type === "user" ? "user" : "assistant",
+      content: msg.content,
+    }));
+  };
+
+  const handleSendMessage = async (message: string) => {
     // Add user message to the chat
     const userMessage = {
       id: Date.now().toString(),
@@ -44,24 +116,48 @@ const ChatInterface = ({
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    saveMessageToSupabase(userMessage);
     setIsTyping(true);
 
     // Call the provided onSendMessage callback
     onSendMessage(message);
 
-    // Simulate AI response after a short delay
-    setTimeout(() => {
+    try {
+      // Get previous messages for context (excluding the one we just added)
+      const previousMessages = getDeepseekMessages();
+
+      // Call DeepSeek API
+      const aiResponseContent = await sendMessageToDeepseek(
+        message,
+        previousMessages,
+      );
+
+      // Add AI response to chat
       const aiResponse = {
         id: (Date.now() + 1).toString(),
-        content:
-          "I've received your message and I'm processing it. How else can I assist you today?",
+        content: aiResponseContent,
         type: "ai" as const,
         timestamp: new Date(),
       };
 
       setMessages((prev) => [...prev, aiResponse]);
+      saveMessageToSupabase(aiResponse);
+    } catch (error) {
+      console.error("Error getting AI response:", error);
+
+      // Add error message
+      const errorResponse = {
+        id: (Date.now() + 1).toString(),
+        content: "I'm sorry, I encountered an error. Please try again later.",
+        type: "ai" as const,
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) => [...prev, errorResponse]);
+      saveMessageToSupabase(errorResponse);
+    } finally {
       setIsTyping(false);
-    }, 1500);
+    }
   };
 
   const handleCrisisClick = () => {
@@ -75,6 +171,17 @@ const ChatInterface = ({
     console.log("Navigate to insights page");
     // navigate("/insights");
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col h-full w-full bg-gray-100 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="mt-4 text-muted-foreground">
+          Loading your conversation...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full w-full bg-gray-100">

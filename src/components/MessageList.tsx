@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from "react";
 import { ScrollArea } from "./ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { motion } from "framer-motion";
+import ReactMarkdown from "react-markdown";
 
 type MessageType = "user" | "ai";
 
@@ -86,12 +87,12 @@ const MessageList = ({
               className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`flex ${message.type === "user" ? "flex-row-reverse" : "flex-row"} items-start max-w-[80%]`}
+                className={`flex ${message.type === "user" ? "flex-row-reverse" : "flex-row"} items-start max-w-[80%] w-full`}
               >
                 {message.type === "ai" && (
                   <Avatar className="h-8 w-8 mr-2">
                     <AvatarImage
-                      src="https://api.dicebear.com/7.x/avataaars/svg?seed=assistant"
+                      src="https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=250&q=80"
                       alt="AI Assistant"
                     />
                     <AvatarFallback>AI</AvatarFallback>
@@ -100,16 +101,18 @@ const MessageList = ({
                 {message.type === "user" && (
                   <Avatar className="h-8 w-8 ml-2">
                     <AvatarImage
-                      src="https://api.dicebear.com/7.x/avataaars/svg?seed=user"
+                      src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=250&q=80"
                       alt="User"
                     />
                     <AvatarFallback>You</AvatarFallback>
                   </Avatar>
                 )}
                 <div
-                  className={`rounded-lg px-4 py-2 ${message.type === "user" ? "bg-blue-500 text-white" : "bg-white border border-gray-200"} shadow-sm`}
+                  className={`rounded-lg px-4 py-2 ${message.type === "user" ? "bg-blue-500 text-white" : "bg-white border border-gray-200"} shadow-sm max-w-full`}
                 >
-                  <div className="text-sm">{message.content}</div>
+                  <div className="text-sm whitespace-pre-wrap break-words">
+                    <ReactMarkdown>{message.content}</ReactMarkdown>
+                  </div>
                   <div
                     className={`text-xs mt-1 ${message.type === "user" ? "text-blue-100" : "text-gray-400"} text-right`}
                   >

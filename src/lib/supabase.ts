@@ -8,6 +8,7 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Development bypass flag - set to true to bypass login during development
+// IMPORTANT: Set this to false before deploying to production
 export const DEV_AUTO_LOGIN = true;
 
 // Function to automatically log in a test user during development
@@ -22,20 +23,22 @@ export const autoLoginForDevelopment = async () => {
 
       // Auto-login with test credentials
       const { error } = await supabase.auth.signInWithPassword({
-        email: "test@example.com",
-        password: "password123",
+        email: "dev@tempotest.com",
+        password: "devpassword123",
       });
 
       if (error) {
         console.log("Auto-login failed, creating test user...");
         // If login fails, try to create the test user
         const { error: signUpError } = await supabase.auth.signUp({
-          email: "test@example.com",
-          password: "password123",
+          email: "dev@tempotest.com",
+          password: "devpassword123",
           options: {
             data: {
-              name: "Test User",
+              name: "Dev Test User",
             },
+            // Skip email verification for development
+            emailRedirectTo: window.location.origin,
           },
         });
 
@@ -46,8 +49,8 @@ export const autoLoginForDevelopment = async () => {
 
         // Try logging in again
         const { error: retryError } = await supabase.auth.signInWithPassword({
-          email: "test@example.com",
-          password: "password123",
+          email: "dev@tempotest.com",
+          password: "devpassword123",
         });
 
         if (retryError) {
@@ -67,4 +70,16 @@ export const autoLoginForDevelopment = async () => {
   }
 
   return false;
+};
+
+// Helper function to get the current user ID
+export const getCurrentUserId = async (): Promise<string | null> => {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user?.id || null;
+};
+
+// Helper function to check if user is authenticated
+export const isAuthenticated = async (): Promise<boolean> => {
+  const { data } = await supabase.auth.getSession();
+  return !!data.session;
 };

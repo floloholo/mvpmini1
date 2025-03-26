@@ -1,9 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import OnboardingQuestion from "@/components/OnboardingQuestion";
 import OnboardingProgress from "@/components/OnboardingProgress";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
+import { supabase, getCurrentUserId } from "@/lib/supabase";
+import { Loader2 } from "lucide-react";
 
 interface OnboardingAnswer {
   question: string;
@@ -14,6 +16,8 @@ const OnboardingPage = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
   const [answers, setAnswers] = useState<OnboardingAnswer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
 
   const questions = [
     {
@@ -35,7 +39,122 @@ const OnboardingPage = () => {
     },
   ];
 
-  const handleNext = (answer: string) => {
+  // Check if user has already completed onboarding
+  useEffect(() => {
+    const checkOnboarding = async () => {
+      try {
+        setLoading(true);
+        const id = await getCurrentUserId();
+        setUserId(id);
+
+        if (id) {
+          const { data, error } = await supabase
+            .from("user_onboarding")
+            .select("*")
+            .eq("user_id", id)
+            .single();
+
+          if (data && !error) {
+            // User has already completed onboarding, redirect to home
+            if (
+              data.what_do_you_want &&
+              data.what_do_you_really_want &&
+              data.regulars
+            ) {
+              navigate("/");
+              return;
+            }
+
+            // User has started but not completed onboarding
+            const newAnswers = [];
+            if (data.what_do_you_want) {
+              newAnswers[0] = {
+                question: questions[0].question,
+                answer: data.what_do_you_want,
+              };
+            }
+            if (data.what_do_you_really_want) {
+              newAnswers[1] = {
+                question: questions[1].question,
+                answer: data.what_do_you_really_want,
+              };
+            }
+            if (data.regulars) {
+              newAnswers[2] = {
+                question: questions[2].question,
+                answer: data.regulars,
+              };
+            }
+
+            if (newAnswers.length > 0) {
+              setAnswers(newAnswers);
+              // Set current step to the next unanswered question
+              for (let i = 0; i < questions.length; i++) {
+                if (!newAnswers[i] || !newAnswers[i].answer) {
+                  setCurrentStep(i);
+                  break;
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error checking onboarding status:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkOnboarding();
+  }, [navigate, questions]);
+
+  const saveAnswerToSupabase = async (
+    questionIndex: number,
+    answer: string,
+  ) => {
+    if (!userId) return;
+
+    try {
+      const updateData: Record<string, string> = {};
+
+      // Map question index to database field
+      switch (questionIndex) {
+        case 0:
+          updateData.what_do_you_want = answer;
+          break;
+        case 1:
+          updateData.what_do_you_really_want = answer;
+          break;
+        case 2:
+          updateData.regulars = answer;
+          break;
+      }
+
+      // Check if user already has an onboarding record
+      const { data } = await supabase
+        .from("user_onboarding")
+        .select("id")
+        .eq("user_id", userId);
+
+      if (data && data.length > 0) {
+        // Update existing record
+        await supabase
+          .from("user_onboarding")
+          .update(updateData)
+          .eq("user_id", userId);
+      } else {
+        // Create new record
+        await supabase.from("user_onboarding").insert({
+          user_id: userId,
+          ...updateData,
+        });
+      }
+    } catch (error) {
+      console.error("Error saving onboarding answer:", error);
+    }
+  };
+
+  const handleNext = async (answer: string) => {
     const updatedAnswers = [...answers];
     updatedAnswers[currentStep] = {
       question: questions[currentStep].question,
@@ -43,12 +162,14 @@ const OnboardingPage = () => {
     };
     setAnswers(updatedAnswers);
 
+    // Save answer to Supabase
+    await saveAnswerToSupabase(currentStep, answer);
+
     if (currentStep < questions.length - 1) {
       setCurrentStep(currentStep + 1);
     } else {
-      // Save answers to backend/storage here
-      console.log("Onboarding complete:", updatedAnswers);
-      navigate("/"); // Navigate to home page after completion
+      // All answers saved, navigate to home
+      navigate("/");
     }
   };
 
@@ -64,6 +185,15 @@ const OnboardingPage = () => {
 
   const currentQuestion = questions[currentStep];
   const currentAnswer = answers[currentStep]?.answer || "";
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="mt-4 text-muted-foreground">Loading your profile...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-background">
