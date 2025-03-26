@@ -111,8 +111,15 @@ const MessageList = ({
                   className={`rounded-lg px-4 py-2 ${message.type === "user" ? "bg-blue-500 text-white" : "bg-white border border-gray-200"} shadow-sm max-w-full`}
                 >
                   <div className="text-sm whitespace-pre-wrap break-words">
-                    <ReactMarkdown>{message.content}</ReactMarkdown>
+                    <ReactMarkdown
+                      components={{
+                        p: ({ node, children }) => <p>{children}</p>, // ✅ No {...props}
+                      }}
+                    >
+                      {message.content}
+                    </ReactMarkdown>
                   </div>
+
                   <div
                     className={`text-xs mt-1 ${message.type === "user" ? "text-blue-100" : "text-gray-400"} text-right`}
                   >
